@@ -1,0 +1,143 @@
+CREATE TABLE IF NOT EXISTS app_meta (
+ id INT PRIMARY KEY,
+ schema_version INT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS projects (
+ id BIGINT AUTO_INCREMENT PRIMARY KEY,
+ code VARCHAR(40) NOT NULL UNIQUE,
+ name VARCHAR(160) NOT NULL,
+ active BOOLEAN NOT NULL DEFAULT TRUE,
+ deleted_at TIMESTAMP NULL
+);
+CREATE TABLE IF NOT EXISTS app_users (
+ id BIGINT AUTO_INCREMENT PRIMARY KEY,
+ username VARCHAR(80) NOT NULL UNIQUE,
+ display_name VARCHAR(160) NOT NULL,
+ role VARCHAR(20) NOT NULL,
+ project_id BIGINT,
+ active BOOLEAN NOT NULL DEFAULT TRUE,
+ password_hash VARCHAR(255) NOT NULL,
+ deleted_at TIMESTAMP NULL,
+ FOREIGN KEY (project_id) REFERENCES projects(id),
+ CHECK (CASE role WHEN 'ADMIN' THEN 1 WHEN 'BODEGA' THEN 1 WHEN 'SUPERVISOR' THEN 1 WHEN 'TRABAJADOR' THEN 1 WHEN 'INVITADO' THEN 1 ELSE 0 END=1),
+ CHECK (project_id IS NOT NULL OR CASE role WHEN 'ADMIN' THEN 1 WHEN 'BODEGA' THEN 1 ELSE 0 END=1)
+);
+CREATE TABLE IF NOT EXISTS resources (
+ id BIGINT AUTO_INCREMENT PRIMARY KEY,
+ code VARCHAR(40) NOT NULL UNIQUE,
+ name VARCHAR(160) NOT NULL,
+ type VARCHAR(20) NOT NULL,
+ unit VARCHAR(40) NOT NULL,
+ location VARCHAR(160) NOT NULL,
+ minimum_quantity INT NOT NULL DEFAULT 0,
+ available_quantity INT NOT NULL DEFAULT 0,
+ damaged_quantity INT NOT NULL DEFAULT 0,
+ active BOOLEAN NOT NULL DEFAULT TRUE,
+ deleted_at TIMESTAMP NULL,
+ CHECK (CASE type WHEN 'HERRAMIENTA' THEN 1 WHEN 'MATERIAL' THEN 1 ELSE 0 END=1),
+ CHECK (minimum_quantity >= 0),
+ CHECK (available_quantity >= 0),
+ CHECK (damaged_quantity >= 0)
+);
+CREATE TABLE IF NOT EXISTS requests (
+ id BIGINT AUTO_INCREMENT PRIMARY KEY,
+ resource_id BIGINT NOT NULL,
+ project_id BIGINT NOT NULL,
+ requester_id BIGINT NOT NULL,
+ quantity INT NOT NULL,
+ due_date DATE,
+ note VARCHAR(1000) NOT NULL,
+ status VARCHAR(20) NOT NULL,
+ decision_note VARCHAR(1000),
+ decided_by BIGINT,
+ created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ decided_at TIMESTAMP,
+ dispatched_at TIMESTAMP,
+ FOREIGN KEY (resource_id) REFERENCES resources(id),
+ FOREIGN KEY (project_id) REFERENCES projects(id),
+ FOREIGN KEY (requester_id) REFERENCES app_users(id),
+ FOREIGN KEY (decided_by) REFERENCES app_users(id),
+ CHECK (quantity > 0),
+ CHECK (CASE status WHEN 'PENDIENTE' THEN 1 WHEN 'APROBADA' THEN 1 WHEN 'RECHAZADA' THEN 1 WHEN 'DESPACHADA' THEN 1 ELSE 0 END=1)
+);
+CREATE TABLE IF NOT EXISTS loans (
+ id BIGINT AUTO_INCREMENT PRIMARY KEY,
+ request_id BIGINT NOT NULL UNIQUE,
+ resource_id BIGINT NOT NULL,
+ project_id BIGINT NOT NULL,
+ borrower_id BIGINT NOT NULL,
+ quantity INT NOT NULL,
+ returned_quantity INT NOT NULL DEFAULT 0,
+ due_date DATE NOT NULL,
+ status VARCHAR(20) NOT NULL DEFAULT 'ACTIVO',
+ created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ closed_at TIMESTAMP,
+ FOREIGN KEY (request_id) REFERENCES requests(id),
+ FOREIGN KEY (resource_id) REFERENCES resources(id),
+ FOREIGN KEY (project_id) REFERENCES projects(id),
+ FOREIGN KEY (borrower_id) REFERENCES app_users(id),
+ CHECK (quantity > 0),
+ CHECK (returned_quantity >= 0 AND returned_quantity <= quantity),
+ CHECK (CASE status WHEN 'ACTIVO' THEN 1 WHEN 'CERRADO' THEN 1 ELSE 0 END=1)
+);
+CREATE TABLE IF NOT EXISTS movements (
+ id BIGINT AUTO_INCREMENT PRIMARY KEY,
+ resource_id BIGINT NOT NULL,
+ project_id BIGINT,
+ request_id BIGINT,
+ loan_id BIGINT,
+ actor_id BIGINT NOT NULL,
+ type VARCHAR(20) NOT NULL,
+ quantity INT NOT NULL,
+ resource_condition VARCHAR(20),
+ note VARCHAR(1000) NOT NULL,
+ created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ FOREIGN KEY (resource_id) REFERENCES resources(id),
+ FOREIGN KEY (project_id) REFERENCES projects(id),
+ FOREIGN KEY (request_id) REFERENCES requests(id),
+ FOREIGN KEY (loan_id) REFERENCES loans(id),
+ FOREIGN KEY (actor_id) REFERENCES app_users(id),
+ CHECK (quantity > 0)
+);
+CREATE TABLE IF NOT EXISTS incidents (
+ id BIGINT AUTO_INCREMENT PRIMARY KEY,
+ resource_id BIGINT NOT NULL,
+ project_id BIGINT NOT NULL,
+ loan_id BIGINT NOT NULL,
+ reporter_id BIGINT NOT NULL,
+ type VARCHAR(30) NOT NULL,
+ note VARCHAR(1000) NOT NULL,
+ resolved BOOLEAN NOT NULL DEFAULT FALSE,
+ resolution_note VARCHAR(1000),
+ resolved_by BIGINT,
+ created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ resolved_at TIMESTAMP,
+ FOREIGN KEY (resource_id) REFERENCES resources(id),
+ FOREIGN KEY (project_id) REFERENCES projects(id),
+ FOREIGN KEY (loan_id) REFERENCES loans(id),
+ FOREIGN KEY (reporter_id) REFERENCES app_users(id),
+ FOREIGN KEY (resolved_by) REFERENCES app_users(id)
+);
+CREATE TABLE IF NOT EXISTS audit_log (
+ id BIGINT AUTO_INCREMENT PRIMARY KEY,
+ actor_id BIGINT NOT NULL,
+ action VARCHAR(50) NOT NULL,
+ entity_type VARCHAR(40) NOT NULL,
+ entity_id BIGINT NOT NULL,
+ detail VARCHAR(1000) NOT NULL,
+ created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ FOREIGN KEY (actor_id) REFERENCES app_users(id)
+);
+CREATE TABLE IF NOT EXISTS deleted_records (
+ id BIGINT AUTO_INCREMENT PRIMARY KEY,
+ entity_type VARCHAR(20) NOT NULL,
+ entity_id BIGINT NOT NULL,
+ entity_label VARCHAR(255) NOT NULL,
+ deleted_by BIGINT NOT NULL,
+ deleted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ expires_at TIMESTAMP NOT NULL,
+ reason VARCHAR(1000) NOT NULL,
+ FOREIGN KEY (deleted_by) REFERENCES app_users(id),
+ CHECK (expires_at > deleted_at),
+ CHECK (CASE entity_type WHEN 'PROYECTO' THEN 1 WHEN 'USUARIO' THEN 1 WHEN 'HERRAMIENTA' THEN 1 WHEN 'MATERIAL' THEN 1 ELSE 0 END=1)
+);
